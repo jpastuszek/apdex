@@ -1,0 +1,7 @@
+[package]
+name = "apdex"
+version = "0.1.0"
+authors = ["Jakub Pastuszek <jpastuszek@gmail.com>"]
+
+[dependencies]
+yansi = "0.4.0"
