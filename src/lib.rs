@@ -10,9 +10,13 @@ use std::fmt;
 /// When displayed a Uniform Output will be used.
 #[derive(Debug)]
 pub struct Apdex {
+    /// Satisfied Zone/Tolerating Zone threshold in seconds.
     pub threshold: f64,
+    /// Count of response times characterized as Satisfied.
     pub satisfied: u64,
+    /// Count of response times characterized as Tolerating.
     pub tolerating: u64,
+    /// Count of response times characterized as Frustrated.
     pub frustrated: u64,
 }
 
@@ -26,7 +30,7 @@ impl Default for Apdex {
 }
 
 impl Apdex {
-    /// Crate new Apdex value given threshold time in seconds.
+    /// Crate new Apdex value given Satisfied Zone/Tolerating Zone threshold time in seconds.
     pub fn new(threshold: f64) -> Apdex {
         Apdex {
             threshold,
