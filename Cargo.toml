@@ -1,6 +1,6 @@
 [package]
 name = "apdex"
-version = "0.1.0"
+version = "0.1.1-alpha.0"
 authors = ["Jakub Pastuszek <jpastuszek@protonmail.com>"]
 description = "Rust implementation for Application Performance Index (Apdex)."
 documentation = "https://docs.rs/apdex"
