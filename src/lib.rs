@@ -1,9 +1,13 @@
+//! This crate provides `Apdex` type that represents Application Performance Index.
+//! 
+//! This implementation is based on [Apdex Technical Specification v1.1](http://apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf).
+
 pub extern crate yansi;
 use yansi::Color;
 use std::fmt;
 
-/// https://docs.newrelic.com/docs/apm/new-relic-apm/apdex/apdex-measure-user-satisfaction
-/// http://apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf
+/// Represents Apdex score after samples were characterize into one of the three groups.
+/// When displayed a Uniform Output will be used.
 #[derive(Debug)]
 pub struct Apdex {
     pub threshold: f64,
@@ -12,6 +16,7 @@ pub struct Apdex {
     pub frustrated: u64,
 }
 
+/// Implements Display for the rating output.
 pub struct ApdexRating<'i>(&'i Apdex);
 
 impl Default for Apdex {
@@ -21,6 +26,7 @@ impl Default for Apdex {
 }
 
 impl Apdex {
+    /// Crate new Apdex value given threshold time in seconds.
     pub fn new(threshold: f64) -> Apdex {
         Apdex {
             threshold,
@@ -30,12 +36,18 @@ impl Apdex {
         }
     }
 
+    /// Crate new Apdex value with samples characterized from provided sample set.
+    /// `Err` samples are counted as Frustrated samples.
     pub fn with_respnse_times(threshold: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
         response_times.into_iter().fold(Self::new(threshold), |mut apdex, response_time| {
             apdex.insert(response_time); 
         apdex})
     }
 
+    /// Crate new Apdex value with samples characterized from provided sample set with assumption of cache presence and given hit rate.
+    /// Provided samples are interpreted as cache misses and characterized.
+    /// `Err` samples are counted as Frustrated samples.
+    /// Apdex Satisfied group sample count is adjusted by simulated cache hit sample count.
     pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
         let mut apdex = Self::with_respnse_times(threshold, response_times);
 
@@ -46,6 +58,8 @@ impl Apdex {
         apdex
     }
 
+    /// Characterize given sample.
+    /// `Err` samples are counted as Frustrated samples.
     pub fn insert(&mut self, response_time: Result<f64, ()>) {
         if let Ok(response_time) = response_time {
             if response_time <= self.threshold {
@@ -61,19 +75,24 @@ impl Apdex {
         }
     }
 
+    /// Returns total number of characterized samples
     pub fn total(&self) -> u64 {
         self.satisfied + self.tolerating + self.frustrated
     }
 
+    /// True if no samples were characterized
     pub fn no_samples(&self) -> bool {
         self.total() == 0
     }
 
+    /// True if less than 100 samples were characterized
     pub fn small_group(&self) -> bool {
         let total = self.total();
         total > 0 && total < 100
     }
 
+    /// Calculate Apdex Score value.
+    /// If no samples were characterized `None` is returned.
     pub fn score(&self) -> Option<f64> {
         if self.no_samples() {
             None
@@ -82,10 +101,12 @@ impl Apdex {
         }
     }
 
+    /// Wraps this object in type implementing Display of the rating (a word) for the score
     pub fn score_rating(&self) -> ApdexRating {
         ApdexRating(&self)
     }
 
+    /// Returns the rating word: Excellent, Good, Fair, Poor, Unacceptable or NoSample
     pub fn rating_word(&self) -> &'static str {
         if let Some(score) = self.score() {
             if score >= 0.94 {
@@ -104,6 +125,7 @@ impl Apdex {
         }
     }
 
+    /// Returns [Color](https://docs.rs/yansi/0.4.0/yansi/enum.Color.html) value from [yansi](https://docs.rs/yansi/0.4.0/yansi) crate corresponding to score value
     pub fn color(&self) -> Color {
         if let Some(score) = self.score() {
             if self.small_group() {
