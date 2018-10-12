@@ -2,7 +2,9 @@
 //! 
 //! This implementation is based on [Apdex Technical Specification v1.1](http://apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf).
 
+#[cfg(feature = "yansi")]
 pub extern crate yansi;
+#[cfg(feature = "yansi")]
 use yansi::Color;
 use std::fmt;
 
@@ -130,6 +132,7 @@ impl Apdex {
     }
 
     /// Returns [Color](https://docs.rs/yansi/0.4.0/yansi/enum.Color.html) value from [yansi](https://docs.rs/yansi/0.4.0/yansi) crate corresponding to score value
+    #[cfg(feature = "yansi")]
     pub fn color(&self) -> Color {
         if let Some(score) = self.score() {
             if self.small_group() {
