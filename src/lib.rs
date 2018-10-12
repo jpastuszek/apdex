@@ -1,5 +1,6 @@
 pub extern crate yansi;
 use yansi::Color;
+use std::fmt;
 
 /// https://docs.newrelic.com/docs/apm/new-relic-apm/apdex/apdex-measure-user-satisfaction
 /// http://apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf
@@ -64,17 +65,20 @@ impl Apdex {
         self.satisfied + self.tolerating + self.frustrated
     }
 
-    pub fn is_low_sample_size(&self) -> bool {
+    pub fn no_samples(&self) -> bool {
+        self.total() == 0
+    }
+
+    pub fn small_group(&self) -> bool {
         let total = self.total();
         total > 0 && total < 100
     }
 
     pub fn score(&self) -> Option<f64> {
-        let total = self.total();
-        if total == 0 {
+        if self.no_samples() {
             None
         } else {
-            Some((self.satisfied as f64 + (self.tolerating as f64 / 2.0)) / total as f64)
+            Some((self.satisfied as f64 + (self.tolerating as f64 / 2.0)) / self.total() as f64)
         }
     }
 
@@ -102,7 +106,7 @@ impl Apdex {
 
     pub fn color(&self) -> Color {
         if let Some(score) = self.score() {
-            if self.is_low_sample_size() {
+            if self.small_group() {
                 return Color::Unset
             }
 
@@ -119,34 +123,37 @@ impl Apdex {
             return Color::Unset
         }
     }
-}
 
-use std::fmt;
-impl fmt::Display for Apdex {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(score) = self.score() {
-            let low_sample_indicator = if self.is_low_sample_size() {
-                "*"
-            } else {
-                ""
-            };
-
-            write!(f, "{:.2}{} [{}]", score, low_sample_indicator, self.threshold)
-        } else {
-            write!(f, "NS [{}]", self.threshold)
-        }
-    }
-}
-
-impl<'i> fmt::Display for ApdexRating<'i> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let low_sample_indicator = if self.0.is_low_sample_size() {
+    fn write_threshold(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let low_sample_indicator = if self.small_group() {
             "*"
         } else {
             ""
         };
 
-        write!(f, "{}{} [{}]", self.0.rating_word(), low_sample_indicator, self.0.threshold)
+        if self.threshold < 10.0 {
+            write!(f, " [{:.1}]{}", self.threshold, low_sample_indicator)
+        } else {
+            write!(f, " [{:.0}]{}", self.threshold, low_sample_indicator)
+        }
+    }
+}
+
+impl fmt::Display for Apdex {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(score) = self.score() {
+            write!(f, "{:.2}", score)
+        } else {
+            write!(f, "NS")
+        }?;
+        self.write_threshold(f)
+    }
+}
+
+impl<'i> fmt::Display for ApdexRating<'i> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.rating_word())?;
+        self.0.write_threshold(f)
     }
 }
 
@@ -157,7 +164,6 @@ mod tests {
     #[test]
     fn score() {
         let apdex = Apdex::with_respnse_times(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().cloned().map(Ok));
-
         assert!(apdex.score().unwrap() > 0.71);
         assert!(apdex.score().unwrap() < 0.73);
     }
@@ -165,7 +171,6 @@ mod tests {
     #[test]
     fn score_errors() {
         let apdex = Apdex::with_respnse_times(1.0, [Ok(0.0), Ok(0.1), Ok(0.2), Ok(0.5), Ok(1.0), Ok(4.0), Ok(3.0), Ok(2.0), Err(())].iter().cloned());
-
         assert!(apdex.score().unwrap() > 0.71);
         assert!(apdex.score().unwrap() < 0.73);
     }
@@ -173,7 +178,77 @@ mod tests {
     #[test]
     fn no_score() {
         let apdex = Apdex::default();
-
         assert!(apdex.score().is_none());
+    }
+
+    #[test]
+    fn uniform_output_no_samples() {
+        let apdex = Apdex::default();
+        assert_eq!(format!("{}", apdex), "NS [4.0]");
+    }
+
+    #[test]
+    fn uniform_output_no_samples_high_t() {
+        let apdex = Apdex::new(10.0);
+        assert_eq!(format!("{}", apdex), "NS [10]");
+    }
+
+    #[test]
+    fn uniform_output_one_small_group() {
+        let mut apdex = Apdex::default();
+        apdex.insert(Ok(0.1));
+        assert_eq!(format!("{}", apdex), "1.00 [4.0]*");
+    }
+
+    #[test]
+    fn uniform_output_one() {
+        let mut apdex = Apdex::default();
+        for _i in 0..100 {
+            apdex.insert(Ok(0.1));
+        }
+        assert_eq!(format!("{}", apdex), "1.00 [4.0]");
+    }
+
+    #[test]
+    fn uniform_output() {
+        let mut apdex = Apdex::default();
+        for _i in 0..100 {
+            apdex.insert(Ok(0.1));
+        }
+        for _i in 0..100 {
+            apdex.insert(Ok(5.0));
+        }
+        assert_eq!(format!("{}", apdex), "0.75 [4.0]");
+    }
+
+    #[test]
+    fn rating_output_no_samples_high_t() {
+        let apdex = Apdex::new(10.0);
+        assert_eq!(format!("{}", apdex.score_rating()), "NoSample [10]");
+    }
+
+    #[test]
+    fn rating_output_no_samples() {
+        let apdex = Apdex::default();
+        assert_eq!(format!("{}", apdex.score_rating()), "NoSample [4.0]");
+    }
+
+    #[test]
+    fn rating_output_small_group() {
+        let mut apdex = Apdex::default();
+        apdex.insert(Ok(0.1));
+        assert_eq!(format!("{}", apdex.score_rating()), "Excellent [4.0]*");
+    }
+
+    #[test]
+    fn rating_output() {
+        let mut apdex = Apdex::default();
+        for _i in 0..100 {
+            apdex.insert(Ok(0.1));
+        }
+        for _i in 0..100 {
+            apdex.insert(Ok(5.0));
+        }
+        assert_eq!(format!("{}", apdex.score_rating()), "Fair [4.0]");
     }
 }
