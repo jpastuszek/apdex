@@ -13,13 +13,13 @@ pub struct Apdex {
 pub struct ApdexRating<'i>(&'i Apdex);
 
 impl Apdex {
-    pub fn new(threshold: f64, response_times: impl IntoIterator<Item = Option<f64>>) -> Apdex {
+    pub fn new(threshold: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
         let mut satisfied = 0;
         let mut tolerating = 0;
         let mut frustrated = 0;
 
         for response_time in response_times {
-            if let Some(response_time) = response_time {
+            if let Ok(response_time) = response_time {
                 if response_time <= threshold {
                     satisfied += 1;
                 } else if response_time <= threshold * 4.0 {
@@ -41,7 +41,7 @@ impl Apdex {
         }
     }
 
-    pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl IntoIterator<Item = Option<f64>>) -> Apdex {
+    pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
         let mut apdex = Self::new(threshold, response_times);
 
         let misses = apdex.total();
@@ -138,10 +138,19 @@ impl<'i> fmt::Display for ApdexRating<'i> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn it_works() {
-        use super::*;
-        let apdex = Apdex::new(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().map(|r| Some(*r)));
+    fn score() {
+        let apdex = Apdex::new(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().cloned().map(Ok));
+
+        assert!(apdex.score() > 0.71);
+        assert!(apdex.score() < 0.73);
+    }
+
+    #[test]
+    fn score_errors() {
+        let apdex = Apdex::new(1.0, [Ok(0.0), Ok(0.1), Ok(0.2), Ok(0.5), Ok(1.0), Ok(4.0), Ok(3.0), Ok(2.0), Err(())].iter().cloned());
 
         assert!(apdex.score() > 0.71);
         assert!(apdex.score() < 0.73);
