@@ -55,7 +55,7 @@ impl Apdex {
                 self.frustrated += 1;
             }
         } else {
-            // Errors are frustrated
+            // "If the tool can detect Task errors, then these application errors (e.g. Web page 404 replies) are counted as frustrated samples."
             self.frustrated += 1;
         }
     }
@@ -69,8 +69,13 @@ impl Apdex {
         total > 0 && total < 100
     }
 
-    pub fn score(&self) -> f64 {
-        (self.satisfied as f64 + (self.tolerating as f64 / 2.0)) / (self.satisfied + self.tolerating + self.frustrated) as f64
+    pub fn score(&self) -> Option<f64> {
+        let total = self.total();
+        if total == 0 {
+            None
+        } else {
+            Some((self.satisfied as f64 + (self.tolerating as f64 / 2.0)) / total as f64)
+        }
     }
 
     pub fn score_rating(&self) -> ApdexRating {
@@ -78,40 +83,40 @@ impl Apdex {
     }
 
     pub fn rating_word(&self) -> &'static str {
-        let score = self.score();
-
-        if self.total() == 0 {
-            return "NoSample"
-        }
-
-        if score >= 0.94 {
-            "Excellent"
-        } else if score >= 0.85 {
-            "Good"
-        } else if score >= 0.70 {
-            "Fair"
-        } else if score >= 0.50 {
-            "Poor"
+        if let Some(score) = self.score() {
+            if score >= 0.94 {
+                "Excellent"
+            } else if score >= 0.85 {
+                "Good"
+            } else if score >= 0.70 {
+                "Fair"
+            } else if score >= 0.50 {
+                "Poor"
+            } else {
+                "Unacceptable"
+            }
         } else {
-            "Unacceptable"
+            "NoSample"
         }
     }
 
     pub fn color(&self) -> Color {
-        let score = self.score();
+        if let Some(score) = self.score() {
+            if self.is_low_sample_size() {
+                return Color::Unset
+            }
 
-        if self.total() == 0 || self.is_low_sample_size() {
-            return Color::Unset
-        }
-
-        if score >= 0.94 {
-            Color::Cyan
-        } else if score >= 0.85 {
-            Color::Green
-        } else if score >= 0.70 {
-            Color::Purple
+            if score >= 0.94 {
+                Color::Cyan
+            } else if score >= 0.85 {
+                Color::Green
+            } else if score >= 0.70 {
+                Color::Purple
+            } else {
+                Color::Red
+            }
         } else {
-            Color::Red
+            return Color::Unset
         }
     }
 }
@@ -119,17 +124,17 @@ impl Apdex {
 use std::fmt;
 impl fmt::Display for Apdex {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.total() == 0 {
-            return write!(f, "NS [{}]", self.threshold)
-        }
+        if let Some(score) = self.score() {
+            let low_sample_indicator = if self.is_low_sample_size() {
+                "*"
+            } else {
+                ""
+            };
 
-        let low_sample_indicator = if self.is_low_sample_size() {
-            "*"
+            write!(f, "{:.2}{} [{}]", score, low_sample_indicator, self.threshold)
         } else {
-            ""
-        };
-
-        write!(f, "{:.2}{} [{}]", self.score(), low_sample_indicator, self.threshold)
+            write!(f, "NS [{}]", self.threshold)
+        }
     }
 }
 
@@ -153,15 +158,22 @@ mod tests {
     fn score() {
         let apdex = Apdex::with_respnse_times(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().cloned().map(Ok));
 
-        assert!(apdex.score() > 0.71);
-        assert!(apdex.score() < 0.73);
+        assert!(apdex.score().unwrap() > 0.71);
+        assert!(apdex.score().unwrap() < 0.73);
     }
 
     #[test]
     fn score_errors() {
         let apdex = Apdex::with_respnse_times(1.0, [Ok(0.0), Ok(0.1), Ok(0.2), Ok(0.5), Ok(1.0), Ok(4.0), Ok(3.0), Ok(2.0), Err(())].iter().cloned());
 
-        assert!(apdex.score() > 0.71);
-        assert!(apdex.score() < 0.73);
+        assert!(apdex.score().unwrap() > 0.71);
+        assert!(apdex.score().unwrap() < 0.73);
+    }
+
+    #[test]
+    fn no_score() {
+        let apdex = Apdex::default();
+
+        assert!(apdex.score().is_none());
     }
 }
