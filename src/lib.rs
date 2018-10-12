@@ -13,7 +13,7 @@ pub struct Apdex {
 pub struct ApdexRating<'i>(&'i Apdex);
 
 impl Apdex {
-    pub fn new(threshold: f64, response_times: impl Iterator<Item = Option<f64>>) -> Apdex {
+    pub fn new(threshold: f64, response_times: impl IntoIterator<Item = Option<f64>>) -> Apdex {
         let mut satisfied = 0;
         let mut tolerating = 0;
         let mut frustrated = 0;
@@ -41,7 +41,7 @@ impl Apdex {
         }
     }
 
-    pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl Iterator<Item = Option<f64>>) -> Apdex {
+    pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl IntoIterator<Item = Option<f64>>) -> Apdex {
         let mut apdex = Self::new(threshold, response_times);
 
         let misses = apdex.total();
