@@ -2,6 +2,7 @@ pub extern crate yansi;
 use yansi::Color;
 
 /// https://docs.newrelic.com/docs/apm/new-relic-apm/apdex/apdex-measure-user-satisfaction
+/// http://apdex.org/documents/ApdexTechnicalSpecificationV11_000.pdf
 #[derive(Debug)]
 pub struct Apdex {
     pub threshold: f64,
@@ -12,43 +13,51 @@ pub struct Apdex {
 
 pub struct ApdexRating<'i>(&'i Apdex);
 
+impl Default for Apdex {
+    fn default() -> Apdex {
+        Apdex::new(4.0)
+    }
+}
+
 impl Apdex {
-    pub fn new(threshold: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
-        let mut satisfied = 0;
-        let mut tolerating = 0;
-        let mut frustrated = 0;
-
-        for response_time in response_times {
-            if let Ok(response_time) = response_time {
-                if response_time <= threshold {
-                    satisfied += 1;
-                } else if response_time <= threshold * 4.0 {
-                    tolerating += 1;
-                } else {
-                    frustrated += 1;
-                }
-            } else {
-                // Errors are frustrated
-                frustrated += 1;
-            }
-        }
-
+    pub fn new(threshold: f64) -> Apdex {
         Apdex {
             threshold,
-            satisfied,
-            tolerating,
-            frustrated,
+            satisfied: 0,
+            tolerating: 0,
+            frustrated: 0,
         }
     }
 
+    pub fn with_respnse_times(threshold: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
+        response_times.into_iter().fold(Self::new(threshold), |mut apdex, response_time| {
+            apdex.insert(response_time); 
+        apdex})
+    }
+
     pub fn with_hit_rate(threshold: f64, assumed_hit_rate: f64, response_times: impl IntoIterator<Item = Result<f64, ()>>) -> Apdex {
-        let mut apdex = Self::new(threshold, response_times);
+        let mut apdex = Self::with_respnse_times(threshold, response_times);
 
         let misses = apdex.total();
         let hits = (misses as f64 / (1.0 - assumed_hit_rate) - misses as f64).ceil() as u64;
         // Assuming hits will satisfy
         apdex.satisfied += hits;
         apdex
+    }
+
+    pub fn insert(&mut self, response_time: Result<f64, ()>) {
+        if let Ok(response_time) = response_time {
+            if response_time <= self.threshold {
+                self.satisfied += 1;
+            } else if response_time <= self.threshold * 4.0 {
+                self.tolerating += 1;
+            } else {
+                self.frustrated += 1;
+            }
+        } else {
+            // Errors are frustrated
+            self.frustrated += 1;
+        }
     }
 
     pub fn total(&self) -> u64 {
@@ -142,7 +151,7 @@ mod tests {
 
     #[test]
     fn score() {
-        let apdex = Apdex::new(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().cloned().map(Ok));
+        let apdex = Apdex::with_respnse_times(1.0, [0.0, 0.1, 0.2, 0.5, 1.0, 4.0, 3.0, 2.0, 5.0].iter().cloned().map(Ok));
 
         assert!(apdex.score() > 0.71);
         assert!(apdex.score() < 0.73);
@@ -150,7 +159,7 @@ mod tests {
 
     #[test]
     fn score_errors() {
-        let apdex = Apdex::new(1.0, [Ok(0.0), Ok(0.1), Ok(0.2), Ok(0.5), Ok(1.0), Ok(4.0), Ok(3.0), Ok(2.0), Err(())].iter().cloned());
+        let apdex = Apdex::with_respnse_times(1.0, [Ok(0.0), Ok(0.1), Ok(0.2), Ok(0.5), Ok(1.0), Ok(4.0), Ok(3.0), Ok(2.0), Err(())].iter().cloned());
 
         assert!(apdex.score() > 0.71);
         assert!(apdex.score() < 0.73);
